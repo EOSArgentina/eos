@@ -11,7 +11,9 @@ RUN git clone -b $branch https://github.com/$origin/eos.git && \
     git checkout $tag && \
     git submodule update --init --recursive
 
-RUN sed -i -e 's/0x04b5/0xB0CA/g' eos/plugins/net_plugin/net_plugin.cpp 
+RUN sed -i -e 's/0x04b5/0xB0CA/g' eos/plugins/net_plugin/net_plugin.cpp
+
+WORKDIR /eos 
 RUN echo "$branch:$(git rev-parse HEAD)" > /etc/eosio-version && \
     cmake -H. -B"/tmp/build" -GNinja -DCMAKE_BUILD_TYPE=Release \
       -DWASM_ROOT=/opt/wasm -DCMAKE_CXX_COMPILER=clang++ \
