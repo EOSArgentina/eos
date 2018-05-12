@@ -3,7 +3,7 @@ version: "3"
 services:
   nodeosd:
     image: eosio/eos:latest
-    command: /opt/eosio/bin/nodeosd.sh --data-dir /opt/eosio/bin/data-dir --resync
+    command: /opt/eosio/bin/start.sh
     hostname: nodeosd
     ports:
       - 8888:8888
@@ -14,6 +14,7 @@ services:
       - nodeos-data-volume:/opt/eosio/bin/data-dir
       - ./config.ini:/opt/eosio/bin/data-dir/config.ini
       - ./genesis.json:/opt/eosio/bin/data-dir/genesis.json
+      - ./start.sh /opt/eosio/bin/start.sh
 
   keosd:
     image: eosio/eos:latest
