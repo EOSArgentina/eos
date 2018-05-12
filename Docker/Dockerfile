@@ -1,11 +1,14 @@
 FROM eosio/builder as builder
+ARG origin=EOSArgentina
 ARG branch=aurora
+ARG tag=4f29311
 
-RUN git clone -b $branch https://github.com/EOSArgentina/eos.git && \
+RUN git clone -b $branch https://github.com/$origin/eos.git && \
     cd eos && \
     git remote add eosio https://github.com/EOSIO/eos.git && \
     git fetch eosio master && \
     git rebase eosio/master && \
+    git checkout $tag && \
     git submodule update --init --recursive && \
     echo "$branch:$(git rev-parse HEAD)" > /etc/eosio-version && \
     cmake -H. -B"/tmp/build" -GNinja -DCMAKE_BUILD_TYPE=Release \
