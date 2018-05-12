@@ -14,7 +14,7 @@ services:
       - nodeos-data-volume:/opt/eosio/bin/data-dir
       - ./config.ini:/opt/eosio/bin/data-dir/config.ini
       - ./genesis.json:/opt/eosio/bin/data-dir/genesis.json
-      - ./start.sh /opt/eosio/bin/start.sh
+      - ./start.sh:/opt/eosio/bin/start.sh
 
   keosd:
     image: eosio/eos:latest
