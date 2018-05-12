@@ -1,0 +1,27 @@
+version: "3"
+
+services:
+  nodeosd:
+    image: eosio/eos:latest
+    command: /opt/eosio/bin/nodeosd.sh --data-dir /opt/eosio/bin/data-dir
+    hostname: nodeosd
+    ports:
+      - 8888:8888
+      - 9876:9876
+    expose:
+      - "8888"
+    volumes:
+      - ./data:/opt/eosio/bin/data-dir
+      - ./config.ini:/opt/eosio/bin/data-dir/config.ini
+      - ./genesis.json:/opt/eosio/bin/data-dir/genesis.json
+      # For NTP, requires tzdata and ntp installed on the host
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
+
+  keosd:
+    image: eosio/eos:latest
+    command: /opt/eosio/bin/keosd --wallet-dir /opt/eosio/bin/data-dir
+    hostname: keosd
+    links:
+      - nodeosd
+    volumes:
+      - ./keosd-data:/opt/eosio/bin/data-dir
