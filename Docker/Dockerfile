@@ -1,12 +1,18 @@
 FROM eosio/builder as builder
-ARG branch=master
+ARG branch=aurora
 
-RUN git clone -b $branch --depth 1 https://github.com/EOSIO/eos.git --recursive \
-    && cd eos && echo "$branch:$(git rev-parse HEAD)" > /etc/eosio-version \
-    && cmake -H. -B"/tmp/build" -GNinja -DCMAKE_BUILD_TYPE=Release -DWASM_ROOT=/opt/wasm -DCMAKE_CXX_COMPILER=clang++ \
-       -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/tmp/build  -DSecp256k1_ROOT_DIR=/usr/local -DBUILD_MONGO_DB_PLUGIN=true \
-    && cmake --build /tmp/build --target install
-
+RUN git clone -b $branch https://github.com/EOSArgentina/eos.git && \
+    cd eos && \
+    git remote add eosio https://github.com/EOSIO/eos.git && \
+    git fetch eosio master && \
+    git rebase eosio/master && \
+    git submodule update --init --recursive && \
+    echo "$branch:$(git rev-parse HEAD)" > /etc/eosio-version && \
+    cmake -H. -B"/tmp/build" -GNinja -DCMAKE_BUILD_TYPE=Release \
+      -DWASM_ROOT=/opt/wasm -DCMAKE_CXX_COMPILER=clang++ \
+      -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/tmp/build \
+      -DSecp256k1_ROOT_DIR=/usr/local -DBUILD_MONGO_DB_PLUGIN=true && \
+    cmake --build /tmp/build --target install
 
 FROM ubuntu:16.04
 
