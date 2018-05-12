@@ -1,6 +1,6 @@
 FROM eosio/builder as builder
 ARG origin=EOSArgentina
-ARG branch=aurora
+ARG branch=bardo
 ARG tag=4f29311
 
 RUN git clone -b $branch https://github.com/$origin/eos.git && \
@@ -9,8 +9,10 @@ RUN git clone -b $branch https://github.com/$origin/eos.git && \
     git fetch eosio master && \
     git rebase eosio/master && \
     git checkout $tag && \
-    git submodule update --init --recursive && \
-    echo "$branch:$(git rev-parse HEAD)" > /etc/eosio-version && \
+    git submodule update --init --recursive
+
+RUN sed -i -e 's/0x04b5/0xB0CA/g' plugins/net_plugin/net_plugin.cpp 
+RUN echo "$branch:$(git rev-parse HEAD)" > /etc/eosio-version && \
     cmake -H. -B"/tmp/build" -GNinja -DCMAKE_BUILD_TYPE=Release \
       -DWASM_ROOT=/opt/wasm -DCMAKE_CXX_COMPILER=clang++ \
       -DCMAKE_C_COMPILER=clang -DCMAKE_INSTALL_PREFIX=/tmp/build \
