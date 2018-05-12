@@ -15,6 +15,8 @@ services:
       - ./config.ini:/opt/eosio/bin/data-dir/config.ini
       - ./genesis.json:/opt/eosio/bin/data-dir/genesis.json
       - ./start.sh:/opt/eosio/bin/start.sh
+      # For NTP, requires tzdata and ntp installed on the host
+      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket:ro
 
   keosd:
     image: eosio/eos:latest
