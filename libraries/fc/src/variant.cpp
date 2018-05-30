@@ -711,6 +711,13 @@ void to_variant( const std::string& s, variant& v )
     v = variant( fc::string(s) );
 }
 
+void to_variant( const shared_string& s,  variant& v )
+{
+    if( s.size() )
+      v = variant(to_hex(s.data(),s.size()));
+    else v = "";
+}
+
 void from_variant( const variant& var,  string& vo )
 {
    vo = var.as_string();

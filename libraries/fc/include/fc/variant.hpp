@@ -19,6 +19,13 @@
 
 #include <boost/multiprecision/cpp_int.hpp>
 
+#include <boost/interprocess/containers/string.hpp>
+#include <boost/interprocess/allocators/allocator.hpp>
+#include <boost/interprocess/managed_mapped_file.hpp>
+
+namespace bip = boost::interprocess;
+using shared_string = bip::basic_string< char, std::char_traits< char >, bip::allocator<char, bip::managed_mapped_file::segment_manager> >;
+
 namespace fc
 {
    /**
@@ -159,6 +166,8 @@ namespace fc
 
    void to_variant( const microseconds& input_microseconds,  variant& output_variant );
    void from_variant( const variant& input_variant,  microseconds& output_microseconds );
+
+   void to_variant( const shared_string& input_string,  variant& output_variant );
 
    #ifdef __APPLE__
    void to_variant( size_t s, variant& v );
