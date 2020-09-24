@@ -60,7 +60,7 @@ static bytes zlib_decompress(const bytes& in) {
 
 template <typename T>
 bool include_delta(const T& old, const T& curr) {
-   return true;
+   return false;
 }
 
 bool include_delta(const eosio::chain::table_id_object& old, const eosio::chain::table_id_object& curr) {
@@ -124,6 +124,7 @@ struct state_history_plugin_impl : std::enable_shared_from_this<state_history_pl
    std::unique_ptr<tcp::acceptor>                             acceptor;
    std::map<transaction_id_type, augmented_transaction_trace> cached_traces;
    fc::optional<augmented_transaction_trace>                  onblock_trace;
+   std::vector<name>                                          filter_on;
 
    void get_log_entry(state_history_log& log, uint32_t block_num, fc::optional<bytes>& result) {
       if (block_num < log.begin_block() || block_num >= log.end_block())
@@ -161,6 +162,19 @@ struct state_history_plugin_impl : std::enable_shared_from_this<state_history_pl
       } catch (...) {
       }
       return {};
+   }
+
+   template <typename T>
+   bool is_in_filter(const eosio::chain::table_id_object& t, T&& fnc) {
+      auto it = std::find(filter_on.begin(), filter_on.end(), t.code);
+      auto r =  (it != filter_on.end());
+      return r;
+   }
+
+   template <typename T>
+   bool is_in_filter(const eosio::chain::key_value_object& o, T&& fnc) {
+      const auto& t = fnc(o.t_id._id);
+      return is_in_filter(t, fnc);
    }
 
    struct session : std::enable_shared_from_this<session> {
@@ -291,11 +305,11 @@ struct state_history_plugin_impl : std::enable_shared_from_this<state_history_pl
                   result.prev_block = block_position{current_request->start_block_num - 1, *prev_block_id};
                if (current_request->fetch_block)
                   plugin->get_block(current_request->start_block_num, result.block);
-               if (current_request->fetch_traces && plugin->trace_log)
-                  plugin->get_log_entry(*plugin->trace_log, current_request->start_block_num, result.traces);
-               if (current_request->fetch_deltas && plugin->chain_state_log)
-                  plugin->get_log_entry(*plugin->chain_state_log, current_request->start_block_num, result.deltas);
             }
+            if (current_request->fetch_traces && plugin->trace_log)
+               plugin->get_log_entry(*plugin->trace_log, current_request->start_block_num, result.traces);
+            if (current_request->fetch_deltas && plugin->chain_state_log)
+               plugin->get_log_entry(*plugin->chain_state_log, current_request->start_block_num, result.deltas);
             ++current_request->start_block_num;
          }
          send(std::move(result));
@@ -413,9 +427,16 @@ struct state_history_plugin_impl : std::enable_shared_from_this<state_history_pl
 
    void on_applied_transaction(const transaction_trace_ptr& p, const signed_transaction& t) {
       if (p->receipt && trace_log) {
-         if (chain::is_onblock(*p))
-            onblock_trace.emplace(p, t);
-         else if (p->failed_dtrx_trace)
+         auto it = std::find_first_of(t.actions.begin(), t.actions.end(), filter_on.begin(), filter_on.end(),
+            [&](const auto& act, const auto& n) {
+               return act.account == n || std::find_first_of(act.authorization.begin(), act.authorization.end(), filter_on.begin(), filter_on.end(),
+               [](const auto& pl, const auto& n){
+                  return pl.actor == n;
+               }) != act.authorization.end();
+         });
+         if( it == t.actions.end() ) return;
+
+         if (p->failed_dtrx_trace)
             cached_traces[p->failed_dtrx_trace->id] = augmented_transaction_trace{p, t};
          else
             cached_traces[p->id] = augmented_transaction_trace{p, t};
@@ -457,9 +478,9 @@ struct state_history_plugin_impl : std::enable_shared_from_this<state_history_pl
          else
             id = r.trx.get<packed_transaction>().id();
          auto it = cached_traces.find(id);
-         EOS_ASSERT(it != cached_traces.end() && it->second.trace->receipt, plugin_exception,
-                    "missing trace for transaction ${id}", ("id", id));
-         traces.push_back(it->second);
+         if( it != cached_traces.end() ) {
+            traces.push_back(it->second);
+         }
       }
       clear_caches();
 
@@ -515,8 +536,10 @@ struct state_history_plugin_impl : std::enable_shared_from_this<state_history_pl
             deltas.push_back({});
             auto& delta = deltas.back();
             delta.name  = name;
-            for (auto& row : index.indices())
-               delta.rows.obj.emplace_back(true, pack_row(row));
+            for (auto& row : index.indices()) {
+               if(is_in_filter(row, get_table_id))
+                  delta.rows.obj.emplace_back(true, pack_row(row));
+            }
          } else {
             if (index.stack().empty())
                return;
@@ -528,41 +551,26 @@ struct state_history_plugin_impl : std::enable_shared_from_this<state_history_pl
             delta.name  = name;
             for (auto& old : undo.old_values) {
                auto& row = index.get(old.first);
-               if (include_delta(old.second, row))
+               if (is_in_filter(row, get_table_id) && include_delta(old.second, row))
                   delta.rows.obj.emplace_back(true, pack_row(row));
             }
-            for (auto& old : undo.removed_values)
-               delta.rows.obj.emplace_back(false, pack_row(old.second));
+            for (auto& old : undo.removed_values) {
+               if(is_in_filter(old.second, get_table_id))
+                  delta.rows.obj.emplace_back(false, pack_row(old.second));
+            }
             for (auto id : undo.new_ids) {
                auto& row = index.get(id);
-               delta.rows.obj.emplace_back(true, pack_row(row));
+               if(is_in_filter(row, get_table_id))
+                  delta.rows.obj.emplace_back(true, pack_row(row));
             }
          }
-      };
 
-      process_table("account", db.get_index<account_index>(), pack_row);
-      process_table("account_metadata", db.get_index<account_metadata_index>(), pack_row);
-      process_table("code", db.get_index<code_index>(), pack_row);
+         if(!deltas.back().rows.obj.size())
+            deltas.pop_back();
+      };
 
       process_table("contract_table", db.get_index<table_id_multi_index>(), pack_row);
       process_table("contract_row", db.get_index<key_value_index>(), pack_contract_row);
-      process_table("contract_index64", db.get_index<index64_index>(), pack_contract_row);
-      process_table("contract_index128", db.get_index<index128_index>(), pack_contract_row);
-      process_table("contract_index256", db.get_index<index256_index>(), pack_contract_row);
-      process_table("contract_index_double", db.get_index<index_double_index>(), pack_contract_row);
-      process_table("contract_index_long_double", db.get_index<index_long_double_index>(), pack_contract_row);
-
-      process_table("global_property", db.get_index<global_property_multi_index>(), pack_row);
-      process_table("generated_transaction", db.get_index<generated_transaction_multi_index>(), pack_row);
-      process_table("protocol_state", db.get_index<protocol_state_multi_index>(), pack_row);
-
-      process_table("permission", db.get_index<permission_index>(), pack_row);
-      process_table("permission_link", db.get_index<permission_link_index>(), pack_row);
-
-      process_table("resource_limits", db.get_index<resource_limits::resource_limits_index>(), pack_row);
-      process_table("resource_usage", db.get_index<resource_limits::resource_usage_index>(), pack_row);
-      process_table("resource_limits_state", db.get_index<resource_limits::resource_limits_state_index>(), pack_row);
-      process_table("resource_limits_config", db.get_index<resource_limits::resource_limits_config_index>(), pack_row);
 
       auto deltas_bin = zlib_compress_bytes(fc::raw::pack(deltas));
       EOS_ASSERT(deltas_bin.size() == (uint32_t)deltas_bin.size(), plugin_exception, "deltas is too big");
@@ -595,6 +603,8 @@ void state_history_plugin::set_program_options(options_description& cli, options
            "your internal network.");
    options("trace-history-debug-mode", bpo::bool_switch()->default_value(false),
            "enable debug mode for trace history");
+   options("state-history-filter", bpo::value<vector<string>>()->composing(),
+          "by default no history is saved for any account, this filter will enable history saving only for the specified account (can be specified multiple times)");
 }
 
 void state_history_plugin::plugin_initialize(const variables_map& options) {
@@ -644,6 +654,16 @@ void state_history_plugin::plugin_initialize(const variables_map& options) {
       if (options.at("chain-state-history").as<bool>())
          my->chain_state_log.emplace("chain_state_history", (state_history_dir / "chain_state_history.log").string(),
                                      (state_history_dir / "chain_state_history.index").string());
+
+      if( options.count( "state-history-filter" )) {
+         auto fo = options.at( "state-history-filter" ).as<vector<string>>();
+         for(const auto& f : fo) {
+            my->filter_on.push_back(string_to_name(f));
+            ilog("save history for ${c}",("c",f));
+         }
+      }
+
+
    }
    FC_LOG_AND_RETHROW()
 } // state_history_plugin::plugin_initialize
